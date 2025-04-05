@@ -42,7 +42,7 @@ program
     .action(async options => {
       const launchOptions: LaunchOptions = {
         headless: !!options.headless,
-        channel: 'chrome',
+        executablePath: "C:\Program Files\Google\Chrome\Application\chrome.exe"
       };
       const userDataDir = options.userDataDir ?? await createUserDataDir();
       const serverList = new ServerList(() => createServer({
