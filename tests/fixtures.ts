@@ -24,8 +24,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 type Fixtures = {
   client: Client;
   visionClient: Client;
-  startClient: (options?: { env?: NodeJS.ProcessEnv, vision?: boolean }) => Promise<Client>;
+  startClient: (options?: { args?: string[] }) => Promise<Client>;
   wsEndpoint: string;
+  cdpEndpoint: string;
 };
 
 export const test = baseTest.extend<Fixtures>({
@@ -35,7 +36,7 @@ export const test = baseTest.extend<Fixtures>({
   },
 
   visionClient: async ({ startClient }, use) => {
-    await use(await startClient({ vision: true }));
+    await use(await startClient({ args: ['--vision'] }));
   },
 
   startClient: async ({ }, use, testInfo) => {
@@ -44,8 +45,8 @@ export const test = baseTest.extend<Fixtures>({
 
     use(async options => {
       const args = ['--headless', '--user-data-dir', userDataDir];
-      if (options?.vision)
-        args.push('--vision');
+      if (options?.args)
+        args.push(...options.args);
       const transport = new StdioClientTransport({
         command: 'node',
         args: [path.join(__dirname, '../cli.js'), ...args],
@@ -64,20 +65,36 @@ export const test = baseTest.extend<Fixtures>({
     await use(browserServer.wsEndpoint());
     await browserServer.close();
   },
+
+  cdpEndpoint: async ({ }, use, testInfo) => {
+    const port = 3200 + (+process.env.TEST_PARALLEL_INDEX!);
+    const browser = await chromium.launchPersistentContext(testInfo.outputPath('user-data-dir'), {
+      channel: 'chrome',
+      args: [`--remote-debugging-port=${port}`],
+    });
+    await use(`http://localhost:${port}`);
+    await browser.close();
+  },
 });
 
 type Response = Awaited<ReturnType<Client['callTool']>>;
 
 export const expect = baseExpect.extend({
-  toHaveTextContent(response: Response, content: string | string[]) {
+  toHaveTextContent(response: Response, content: string | RegExp) {
     const isNot = this.isNot;
     try {
-      content = Array.isArray(content) ? content : [content];
-      const texts = (response.content as any).map(c => c.text);
-      if (isNot)
-        baseExpect(texts).not.toEqual(content);
-      else
-        baseExpect(texts).toEqual(content);
+      const text = (response.content as any)[0].text;
+      if (typeof content === 'string') {
+        if (isNot)
+          baseExpect(text.trim()).not.toBe(content.trim());
+        else
+          baseExpect(text.trim()).toBe(content.trim());
+      } else {
+        if (isNot)
+          baseExpect(text).not.toMatch(content);
+        else
+          baseExpect(text).toMatch(content);
+      }
     } catch (e) {
       return {
         pass: isNot,

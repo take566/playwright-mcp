@@ -17,12 +17,11 @@
 import { z } from 'zod';
 import zodToJsonSchema from 'zod-to-json-schema';
 
-import { captureAriaSnapshot, runAndWait } from './utils';
-
 import type * as playwright from 'playwright';
 import type { Tool } from './tool';
 
-export const snapshot: Tool = {
+const snapshot: Tool = {
+  capability: 'core',
   schema: {
     name: 'browser_snapshot',
     description: 'Capture accessibility snapshot of the current page, this is better than screenshot',
@@ -30,7 +29,7 @@ export const snapshot: Tool = {
   },
 
   handle: async context => {
-    return await captureAriaSnapshot(context);
+    return await context.currentTab().run(async () => {}, { captureSnapshot: true });
   },
 };
 
@@ -39,7 +38,8 @@ const elementSchema = z.object({
   ref: z.string().describe('Exact target element reference from the page snapshot'),
 });
 
-export const click: Tool = {
+const click: Tool = {
+  capability: 'core',
   schema: {
     name: 'browser_click',
     description: 'Perform click on a web page',
@@ -48,7 +48,12 @@ export const click: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = elementSchema.parse(params);
-    return runAndWait(context, `"${validatedParams.element}" clicked`, () => context.refLocator(validatedParams.ref).click(), true);
+    return await context.currentTab().runAndWaitWithSnapshot(async tab => {
+      const locator = tab.lastSnapshot().refLocator(validatedParams.ref);
+      await locator.click();
+    }, {
+      status: `Clicked "${validatedParams.element}"`,
+    });
   },
 };
 
@@ -59,7 +64,8 @@ const dragSchema = z.object({
   endRef: z.string().describe('Exact target element reference from the page snapshot'),
 });
 
-export const drag: Tool = {
+const drag: Tool = {
+  capability: 'core',
   schema: {
     name: 'browser_drag',
     description: 'Perform drag and drop between two elements',
@@ -68,15 +74,18 @@ export const drag: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = dragSchema.parse(params);
-    return runAndWait(context, `Dragged "${validatedParams.startElement}" to "${validatedParams.endElement}"`, async () => {
-      const startLocator = context.refLocator(validatedParams.startRef);
-      const endLocator = context.refLocator(validatedParams.endRef);
+    return await context.currentTab().runAndWaitWithSnapshot(async tab => {
+      const startLocator = tab.lastSnapshot().refLocator(validatedParams.startRef);
+      const endLocator = tab.lastSnapshot().refLocator(validatedParams.endRef);
       await startLocator.dragTo(endLocator);
-    }, true);
+    }, {
+      status: `Dragged "${validatedParams.startElement}" to "${validatedParams.endElement}"`,
+    });
   },
 };
 
-export const hover: Tool = {
+const hover: Tool = {
+  capability: 'core',
   schema: {
     name: 'browser_hover',
     description: 'Hover over element on page',
@@ -85,16 +94,23 @@ export const hover: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = elementSchema.parse(params);
-    return runAndWait(context, `Hovered over "${validatedParams.element}"`, () => context.refLocator(validatedParams.ref).hover(), true);
+    return await context.currentTab().runAndWaitWithSnapshot(async tab => {
+      const locator = tab.lastSnapshot().refLocator(validatedParams.ref);
+      await locator.hover();
+    }, {
+      status: `Hovered over "${validatedParams.element}"`,
+    });
   },
 };
 
 const typeSchema = elementSchema.extend({
   text: z.string().describe('Text to type into the element'),
-  submit: z.boolean().describe('Whether to submit entered text (press Enter after)'),
+  submit: z.boolean().optional().describe('Whether to submit entered text (press Enter after)'),
+  slowly: z.boolean().optional().describe('Whether to type one character at a time. Useful for triggering key handlers in the page. By default entire text is filled in at once.'),
 });
 
-export const type: Tool = {
+const type: Tool = {
+  capability: 'core',
   schema: {
     name: 'browser_type',
     description: 'Type text into editable element',
@@ -103,12 +119,17 @@ export const type: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = typeSchema.parse(params);
-    return await runAndWait(context, `Typed "${validatedParams.text}" into "${validatedParams.element}"`, async () => {
-      const locator = context.refLocator(validatedParams.ref);
-      await locator.fill(validatedParams.text);
+    return await context.currentTab().runAndWaitWithSnapshot(async tab => {
+      const locator = tab.lastSnapshot().refLocator(validatedParams.ref);
+      if (validatedParams.slowly)
+        await locator.pressSequentially(validatedParams.text);
+      else
+        await locator.fill(validatedParams.text);
       if (validatedParams.submit)
         await locator.press('Enter');
-    }, true);
+    }, {
+      status: `Typed "${validatedParams.text}" into "${validatedParams.element}"`,
+    });
   },
 };
 
@@ -116,7 +137,8 @@ const selectOptionSchema = elementSchema.extend({
   values: z.array(z.string()).describe('Array of values to select in the dropdown. This can be a single value or multiple values.'),
 });
 
-export const selectOption: Tool = {
+const selectOption: Tool = {
+  capability: 'core',
   schema: {
     name: 'browser_select_option',
     description: 'Select an option in a dropdown',
@@ -125,10 +147,12 @@ export const selectOption: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = selectOptionSchema.parse(params);
-    return await runAndWait(context, `Selected option in "${validatedParams.element}"`, async () => {
-      const locator = context.refLocator(validatedParams.ref);
+    return await context.currentTab().runAndWaitWithSnapshot(async tab => {
+      const locator = tab.lastSnapshot().refLocator(validatedParams.ref);
       await locator.selectOption(validatedParams.values);
-    }, true);
+    }, {
+      status: `Selected option in "${validatedParams.element}"`,
+    });
   },
 };
 
@@ -136,7 +160,8 @@ const screenshotSchema = z.object({
   raw: z.boolean().optional().describe('Whether to return without compression (in PNG format). Default is false, which returns a JPEG image.'),
 });
 
-export const screenshot: Tool = {
+const screenshot: Tool = {
+  capability: 'core',
   schema: {
     name: 'browser_take_screenshot',
     description: `Take a screenshot of the current page. You can't perform actions based on the screenshot, use browser_snapshot for actions.`,
@@ -145,11 +170,21 @@ export const screenshot: Tool = {
 
   handle: async (context, params) => {
     const validatedParams = screenshotSchema.parse(params);
-    const page = context.existingPage();
+    const tab = context.currentTab();
     const options: playwright.PageScreenshotOptions = validatedParams.raw ? { type: 'png', scale: 'css' } : { type: 'jpeg', quality: 50, scale: 'css' };
-    const screenshot = await page.screenshot(options);
+    const screenshot = await tab.page.screenshot(options);
     return {
       content: [{ type: 'image', data: screenshot.toString('base64'), mimeType: validatedParams.raw ? 'image/png' : 'image/jpeg' }],
     };
   },
 };
+
+export default [
+  snapshot,
+  click,
+  drag,
+  hover,
+  type,
+  selectOption,
+  screenshot,
+];

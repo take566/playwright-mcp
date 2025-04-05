@@ -29,26 +29,69 @@ import { ServerList } from './server';
 
 import type { LaunchOptions } from 'playwright';
 import assert from 'assert';
+import { ToolCapability } from './tools/tool';
 
 const packageJSON = require('../package.json');
 
 program
     .version('Version ' + packageJSON.version)
     .name(packageJSON.name)
+    .option('--browser <browser>', 'Browser or chrome channel to use, possible values: chrome, firefox, webkit, msedge.')
+    .option('--caps <caps>', 'Comma-separated list of capabilities to enable, possible values: tabs, pdf, history, wait, files, install. Default is all.')
+    .option('--cdp-endpoint <endpoint>', 'CDP endpoint to connect to.')
+    .option('--executable-path <path>', 'Path to the browser executable.')
     .option('--headless', 'Run browser in headless mode, headed by default')
+    .option('--port <port>', 'Port to listen on for SSE transport.')
     .option('--user-data-dir <path>', 'Path to the user data directory')
     .option('--vision', 'Run server that uses screenshots (Aria snapshots are used by default)')
-    .option('--port <port>', 'Port to listen on for SSE transport.')
     .action(async options => {
+      let browserName: 'chromium' | 'firefox' | 'webkit';
+      let channel: string | undefined;
+      switch (options.browser) {
+        case 'chrome':
+        case 'chrome-beta':
+        case 'chrome-canary':
+        case 'chrome-dev':
+        case 'msedge':
+        case 'msedge-beta':
+        case 'msedge-canary':
+        case 'msedge-dev':
+          browserName = 'chromium';
+          channel = options.browser;
+          break;
+        case 'chromium':
+          browserName = 'chromium';
+          break;
+        case 'firefox':
+          browserName = 'firefox';
+          break;
+        case 'webkit':
+          browserName = 'webkit';
+          break;
+        default:
+          browserName = 'chromium';
+          channel = 'chrome';
+      }
+
       const launchOptions: LaunchOptions = {
         headless: !!options.headless,
+<<<<<<< HEAD
         executablePath: "C:\Program Files\Google\Chrome\Application\chrome.exe"
+=======
+        channel,
+        executablePath: options.executablePath,
+>>>>>>> abd56f514b2b36761799d433f7e4cd522b3dfc59
       };
-      const userDataDir = options.userDataDir ?? await createUserDataDir();
+
+      const userDataDir = options.userDataDir ?? await createUserDataDir(browserName);
+
       const serverList = new ServerList(() => createServer({
+        browserName,
         userDataDir,
         launchOptions,
         vision: !!options.vision,
+        cdpEndpoint: options.cdpEndpoint,
+        capabilities: options.caps?.split(',').map((c: string) => c.trim() as ToolCapability),
       }));
       setupExitWatchdog(serverList);
 
@@ -70,7 +113,7 @@ function setupExitWatchdog(serverList: ServerList) {
 
 program.parse(process.argv);
 
-async function createUserDataDir() {
+async function createUserDataDir(browserName: 'chromium' | 'firefox' | 'webkit') {
   let cacheDirectory: string;
   if (process.platform === 'linux')
     cacheDirectory = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
@@ -80,7 +123,7 @@ async function createUserDataDir() {
     cacheDirectory = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
   else
     throw new Error('Unsupported platform: ' + process.platform);
-  const result = path.join(cacheDirectory, 'ms-playwright', 'mcp-chrome-profile');
+  const result = path.join(cacheDirectory, 'ms-playwright', `mcp-${browserName}-profile`);
   await fs.promises.mkdir(result, { recursive: true });
   return result;
 }

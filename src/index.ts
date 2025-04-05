@@ -15,70 +15,70 @@
  */
 
 import { createServerWithTools } from './server';
-import * as snapshot from './tools/snapshot';
-import * as common from './tools/common';
-import * as screenshot from './tools/screenshot';
-import { console } from './resources/console';
+import common from './tools/common';
+import files from './tools/files';
+import install from './tools/install';
+import keyboard from './tools/keyboard';
+import navigate from './tools/navigate';
+import pdf from './tools/pdf';
+import snapshot from './tools/snapshot';
+import tabs from './tools/tabs';
+import screen from './tools/screen';
+import { console as consoleResource } from './resources/console';
 
-import type { Tool } from './tools/tool';
+import type { Tool, ToolCapability } from './tools/tool';
 import type { Resource } from './resources/resource';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { LaunchOptions } from 'playwright';
 
-const commonTools: Tool[] = [
-  common.pressKey,
-  common.wait,
-  common.pdf,
-  common.close,
-];
-
 const snapshotTools: Tool[] = [
-  common.navigate(true),
-  common.goBack(true),
-  common.goForward(true),
-  common.chooseFile(true),
-  snapshot.snapshot,
-  snapshot.click,
-  snapshot.hover,
-  snapshot.type,
-  snapshot.selectOption,
-  snapshot.screenshot,
-  ...commonTools,
+  ...common,
+  ...files(true),
+  ...install,
+  ...keyboard(true),
+  ...navigate(true),
+  ...pdf,
+  ...snapshot,
+  ...tabs(true),
 ];
 
 const screenshotTools: Tool[] = [
-  common.navigate(false),
-  common.goBack(false),
-  common.goForward(false),
-  common.chooseFile(false),
-  screenshot.screenshot,
-  screenshot.moveMouse,
-  screenshot.click,
-  screenshot.drag,
-  screenshot.type,
-  ...commonTools,
+  ...common,
+  ...files(false),
+  ...install,
+  ...keyboard(false),
+  ...navigate(false),
+  ...pdf,
+  ...screen,
+  ...tabs(false),
 ];
 
 const resources: Resource[] = [
-  console,
+  consoleResource,
 ];
 
 type Options = {
+  browserName?: 'chromium' | 'firefox' | 'webkit';
   userDataDir?: string;
   launchOptions?: LaunchOptions;
+  cdpEndpoint?: string;
   vision?: boolean;
+  capabilities?: ToolCapability[];
 };
 
 const packageJSON = require('../package.json');
 
 export function createServer(options?: Options): Server {
-  const tools = options?.vision ? screenshotTools : snapshotTools;
+  const allTools = options?.vision ? screenshotTools : snapshotTools;
+  const tools = allTools.filter(tool => !options?.capabilities || tool.capability === 'core' || options.capabilities.includes(tool.capability));
   return createServerWithTools({
     name: 'Playwright',
     version: packageJSON.version,
     tools,
     resources,
+    browserName: options?.browserName,
     userDataDir: options?.userDataDir ?? '',
     launchOptions: options?.launchOptions,
+    cdpEndpoint: options?.cdpEndpoint,
   });
 }

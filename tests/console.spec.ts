@@ -14,22 +14,22 @@
  * limitations under the License.
  */
 
-import type { Resource } from './resource';
+import { test, expect } from './fixtures';
 
-export const console: Resource = {
-  schema: {
+test('browser://console', async ({ client }) => {
+  await client.callTool({
+    name: 'browser_navigate',
+    arguments: {
+      url: 'data:text/html,<html><script>console.log("Hello, world!");console.error("Error"); </script></html>',
+    },
+  });
+
+  const resource = await client.readResource({
     uri: 'browser://console',
-    name: 'Page console',
+  });
+  expect(resource.contents).toEqual([{
+    uri: 'browser://console',
     mimeType: 'text/plain',
-  },
-
-  read: async (context, uri) => {
-    const messages = await context.currentTab().console();
-    const log = messages.map(message => `[${message.type().toUpperCase()}] ${message.text()}`).join('\n');
-    return [{
-      uri,
-      mimeType: 'text/plain',
-      text: log
-    }];
-  },
-};
+    text: '[LOG] Hello, world!\n[ERROR] Error',
+  }]);
+});
